@@ -1,0 +1,364 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Morning Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script>
+/* ============================================================
+   SETTINGS — edit these
+   ============================================================ */
+const CONFIG = {
+  leaveTime: '07:58',
+  clock24: false,
+
+  // Weather location (Lea, Gainsborough)
+  place: 'Lea, Gainsborough',
+  lat: 53.3728,
+  lon: -0.7536,
+
+  // Timetable cycle. Set this to any Monday that was Week A.
+  cycleStart: '2026-11-02',
+  schoolEnds: '15:30',
+  // Lessons: [start, end, subject, room]. One entry per weekday, Mon–Fri.
+  weeks: {
+    A: [
+      [['09:10','10:00','Graphics','Rm 35'], ['10:00','10:50','Literature','Rm 83'], ['11:10','12:00','Chemistry','Rm 40'], ['12:00','12:50','Business','Rm 38'], ['13:50','14:40','Maths','Rm 75'], ['14:40','15:30','German','Rm 25']],
+      [['09:10','10:00','German','Rm 25'], ['10:00','10:50','Literature','Rm 83'], ['11:10','12:00','Chemistry','Rm 40'], ['12:00','12:50','Maths','Rm 75'], ['13:50','14:40','Geography','Rm 23'], ['14:40','15:30','Geography','Rm 23']],
+      [['09:10','10:00','Physics','Rm 31'], ['10:00','10:50','Literature','Rm 83'], ['11:10','12:00','PE','Hall'], ['12:00','12:50','Biology','Rm 03'], ['13:50','14:40','Citizenship','Rm 81'], ['14:40','15:30','Business','Rm 38']],
+      [['09:10','10:00','English','Rm 83'], ['10:00','10:50','Physics','Rm 31'], ['11:10','12:00','Business','Rm 38'], ['12:00','12:50','Maths','Rm 75'], ['13:50','14:40','German','Rm 25'], ['14:40','15:30','PE','Hall']],
+      [['09:10','10:00','Biology','Rm 03'], ['10:00','10:50','English','Rm 83'], ['11:10','12:00','Graphics','Rm 35'], ['12:00','12:50','Graphics','Rm 35'], ['13:50','14:40','Geography','Rm 23'], ['14:40','15:30','Maths','Rm 75']]
+    ],
+    B: [
+      [['09:10','10:00','Physics','Rm 64'], ['10:00','10:50','German','Rm 25'], ['11:10','12:00','Literature','Rm 83'], ['12:00','12:50','PE','Hall'], ['13:50','14:40','Business','Rm 38'], ['14:40','15:30','Maths','Rm 75']],
+      [['09:10','10:00','German','Rm 25'], ['10:00','10:50','Chemistry','Rm 40'], ['11:10','12:00','Maths','Rm 75'], ['12:00','12:50','Biology','Rm 03'], ['13:50','14:40','Graphics','Rm 35'], ['14:40','15:30','Graphics','Rm 35']],
+      [['09:10','10:00','Business','Rm 38'], ['10:00','10:50','Citizenship','Rm 81'], ['11:10','12:00','Geography','Rm 04'], ['12:00','12:50','Geography','Rm 04'], ['13:50','14:40','English','Rm 83'], ['14:40','15:30','Biology','Rm 03']],
+      [['09:10','10:00','German','Rm 25'], ['10:00','10:50','Business','Rm 38'], ['11:10','12:00','Chemistry','Rm 40'], ['12:00','12:50','Physics','Rm 64'], ['13:50','14:40','Maths','Rm 75'], ['14:40','15:30','Literature','Rm 83']],
+      [['09:10','10:00','Graphics','Rm 35'], ['10:00','10:50','Maths','Rm 75'], ['11:10','12:00','English','Rm 83'], ['12:00','12:50','Geography','Rm 23'], ['13:50','14:40','Maths','Rm 75'], ['14:40','15:30','PE','Hall']]
+    ]
+  },
+
+  // Placeholder headlines (swap for a real feed later)
+  news: [
+    { source: 'Lincolnshire Echo', time: '6:40', title: 'Trent riverside path reopens after two-year restoration' },
+    { source: 'Regional News', time: '7:15', title: 'Extra morning trains to Lincoln confirmed from January' },
+    { source: 'Gainsborough Standard', time: '7:52', title: 'Local school robotics team qualifies for national final' }
+  ],
+
+  // Background animation. Lower fps = easier on a Fire TV Stick.
+  motion: 1,
+  glow: 0.2,
+  fps: 24
+};
+</script>
+<style>
+  html, body { margin: 0; height: 100%; background: #050505; overflow: hidden; }
+  #stage-wrap { position: fixed; inset: 0; background: #050505; display: flex; align-items: center; justify-content: center; overflow: hidden; }
+  #stage {
+    position: relative; width: 1920px; height: 1080px; flex: none; transform-origin: center center; overflow: hidden;
+    background: #050505; font-family: -apple-system, 'SF Pro Display', 'Figtree', sans-serif; color: #f4f4f2;
+    -webkit-font-smoothing: antialiased; font-variant-numeric: tabular-nums;
+  }
+  #bg { position: absolute; inset: 0; width: 100%; height: 100%; filter: blur(34px); transform: scale(1.15); }
+  .vignette { position: absolute; inset: 0; background: radial-gradient(ellipse at 50% 35%, rgba(0,0,0,0) 25%, rgba(0,0,0,0.6) 100%); }
+  .layout { position: relative; height: 100%; box-sizing: border-box; padding: 80px 88px 88px; display: grid; grid-template-rows: 1fr 440px; gap: 56px; }
+  .top { display: grid; grid-template-columns: minmax(0,1fr) 600px; gap: 40px; align-items: end; }
+  .bottom { display: grid; grid-template-columns: minmax(0,1.1fr) minmax(0,0.9fr) 600px; gap: 40px; min-height: 0; }
+
+  .card {
+    border-radius: 52px; box-sizing: border-box; overflow: hidden;
+    background: linear-gradient(160deg, rgba(255,255,255,0.09), rgba(255,255,255,0.025));
+    -webkit-backdrop-filter: blur(48px) saturate(140%); backdrop-filter: blur(48px) saturate(140%);
+    border: 1px solid rgba(255,255,255,0.10);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.2), 0 40px 100px rgba(0,0,0,0.45);
+  }
+  .label { font-size: 26px; font-weight: 600; color: rgba(255,255,255,0.55); }
+  .muted { color: rgba(255,255,255,0.45); }
+
+  .date { font-size: 38px; font-weight: 500; color: rgba(255,255,255,0.5); letter-spacing: -0.01em; }
+  .time { font-size: 300px; font-weight: 500; line-height: 0.84; letter-spacing: -0.06em; color: #f6f6f4; }
+  .suffix { font-size: 60px; font-weight: 500; color: rgba(255,255,255,0.35); letter-spacing: -0.02em; }
+
+  .leave { height: 296px; padding: 40px 44px; display: grid; grid-template-columns: minmax(0,1fr) 184px; align-items: center; gap: 32px;
+    background: linear-gradient(155deg, rgba(255,255,255,0.10), rgba(255,255,255,0.03)); box-shadow: inset 0 1px 0 rgba(255,255,255,0.22), 0 40px 100px rgba(0,0,0,0.5); }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .leave-num { font-size: 120px; font-weight: 500; line-height: 1; letter-spacing: -0.05em; }
+  .leave-unit { font-size: 38px; font-weight: 500; color: rgba(255,255,255,0.55); }
+
+  .lesson { display: grid; grid-template-columns: 92px 1fr auto; align-items: center; gap: 18px; height: 52px; padding: 0 16px; border-radius: 18px; }
+  .lesson .start { font-size: 24px; font-weight: 500; color: rgba(255,255,255,0.45); }
+  .lesson .subject { font-size: 30px; letter-spacing: -0.01em; }
+  .lesson .tag { font-size: 22px; font-weight: 600; }
+  .no-school { font-size: 34px; font-weight: 500; color: rgba(255,255,255,0.5); padding: 24px 16px; }
+
+  .hour { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+  .story { display: flex; flex-direction: column; gap: 4px; padding: 13px 0; }
+  .story + .story { border-top: 1px solid rgba(255,255,255,0.08); }
+  .story .meta { display: flex; justify-content: space-between; font-size: 21px; font-weight: 600; color: rgba(255,255,255,0.4); }
+  .story .title { font-size: 27px; font-weight: 500; line-height: 1.2; letter-spacing: -0.005em; }
+</style>
+</head>
+<body>
+<div id="stage-wrap">
+  <div id="stage">
+    <canvas id="bg" width="384" height="216"></canvas>
+    <div class="vignette"></div>
+
+    <div class="layout">
+      <div class="top">
+        <div style="display:flex;flex-direction:column;gap:18px;padding-left:6px">
+          <div class="date" id="date"></div>
+          <div style="display:flex;align-items:baseline;gap:20px">
+            <div class="time" id="time"></div>
+            <div class="suffix" id="suffix"></div>
+          </div>
+        </div>
+
+        <div class="card leave">
+          <div style="display:flex;flex-direction:column;gap:12px">
+            <div style="display:flex;align-items:center;gap:12px">
+              <div class="dot" id="leave-dot"></div>
+              <div class="label">Leave for school</div>
+            </div>
+            <div style="display:flex;align-items:baseline;gap:10px;white-space:nowrap">
+              <div class="leave-num" id="leave-num"></div>
+              <div class="leave-unit" id="leave-unit"></div>
+            </div>
+            <div style="font-size:28px;font-weight:500" class="muted" id="leave-at"></div>
+          </div>
+          <div style="position:relative;width:184px;height:184px">
+            <svg width="184" height="184" viewBox="0 0 184 184" style="position:absolute;inset:0;transform:rotate(-90deg)">
+              <circle cx="92" cy="92" r="80" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="10"></circle>
+              <circle id="ring" cx="92" cy="92" r="80" fill="none" stroke-width="10" stroke-linecap="round" stroke-dasharray="502.65"></circle>
+            </svg>
+            <div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px">
+              <div style="font-size:40px;font-weight:600;letter-spacing:-0.02em" id="ring-time"></div>
+              <div style="font-size:20px;font-weight:600;color:rgba(255,255,255,0.4);letter-spacing:0.08em" id="ring-ampm"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="bottom">
+        <div class="card" style="padding:36px 30px 30px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:0 14px">
+            <div class="label">Timetable</div>
+            <div style="font-size:24px;font-weight:500;color:rgba(255,255,255,0.35)" id="tt-day"></div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px" id="lessons"></div>
+        </div>
+
+        <div class="card" style="padding:36px 44px 34px;display:flex;flex-direction:column;justify-content:space-between">
+          <div style="display:flex;flex-direction:column;gap:4px">
+            <div class="label" id="place"></div>
+            <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px">
+              <div style="font-size:132px;font-weight:300;line-height:1;letter-spacing:-0.05em" id="w-temp">–</div>
+              <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding-bottom:16px">
+                <div style="font-size:30px;font-weight:500;text-align:right" id="w-desc">Loading…</div>
+                <div style="font-size:26px;font-weight:500" class="muted" id="w-hilo"></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;padding-top:24px;border-top:1px solid rgba(255,255,255,0.08)" id="hourly"></div>
+        </div>
+
+        <div class="card" style="padding:36px 44px 28px;display:flex;flex-direction:column;gap:8px">
+          <div class="label">Top Stories</div>
+          <div style="display:flex;flex-direction:column" id="news"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+const pad = n => String(n).padStart(2, '0');
+const toMin = s => +s.slice(0, 2) * 60 + +s.slice(3, 5);
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+// ---------- Fit 1920x1080 stage to any screen ----------
+function fit() {
+  const w = window.innerWidth, h = window.innerHeight;
+  if (w > 0 && h > 0) $('stage').style.transform = `scale(${Math.min(w / 1920, h / 1080)})`;
+}
+window.addEventListener('resize', fit);
+fit();
+
+// ---------- Animated background ----------
+const blobs = [
+  { c: [150, 150, 150], x: 0.2, y: 0.25, r: 0.5, sx: 0.00009, sy: 0.00006, p: 0 },
+  { c: [110, 110, 115], x: 0.85, y: 0.2, r: 0.45, sx: 0.00007, sy: 0.0001, p: 2 },
+  { c: [120, 118, 114], x: 0.55, y: 0.95, r: 0.55, sx: 0.00005, sy: 0.00008, p: 4 },
+  { c: [160, 110, 70], x: 0.05, y: 0.9, r: 0.35, sx: 0.00008, sy: 0.00005, p: 1 }
+];
+const ctx = $('bg').getContext('2d');
+let lastFrame = 0;
+function draw(t) {
+  requestAnimationFrame(draw);
+  if (t - lastFrame < 1000 / CONFIG.fps) return;
+  lastFrame = t;
+  const W = 384, H = 216, k = CONFIG.motion, a = CONFIG.glow;
+  ctx.globalCompositeOperation = 'source-over';
+  ctx.fillStyle = '#050505';
+  ctx.fillRect(0, 0, W, H);
+  ctx.globalCompositeOperation = 'lighter';
+  for (const b of blobs) {
+    const x = (b.x + Math.sin(t * b.sx * k + b.p) * 0.2) * W;
+    const y = (b.y + Math.cos(t * b.sy * k + b.p) * 0.18) * H;
+    const g = ctx.createRadialGradient(x, y, 0, x, y, b.r * W);
+    g.addColorStop(0, `rgba(${b.c},${a})`);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, W, H);
+  }
+}
+requestAnimationFrame(draw);
+
+// ---------- Timetable cycle ----------
+function weekLetter(day) {
+  const start = new Date(CONFIG.cycleStart + 'T00:00:00');
+  const weeks = Math.floor(Math.round((day - start) / 86400000) / 7);
+  return ((weeks % 2) + 2) % 2 === 0 ? 'A' : 'B';
+}
+function lessonsFor(day) {
+  const dow = day.getDay();
+  if (dow === 0 || dow === 6) return null;
+  return CONFIG.weeks[weekLetter(day)][dow - 1] || [];
+}
+// Today until the last lesson ends, otherwise the next school day.
+function schoolDay(now) {
+  const d = new Date(now); d.setHours(0, 0, 0, 0);
+  const today = lessonsFor(d);
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  if (today && nowMin < toMin(CONFIG.schoolEnds)) return { day: d, lessons: today, isToday: true };
+  for (let i = 1; i <= 7; i++) {
+    const n = new Date(d); n.setDate(d.getDate() + i);
+    const l = lessonsFor(n);
+    if (l) return { day: n, lessons: l, isToday: false };
+  }
+}
+
+// ---------- Clock, leave countdown, timetable ----------
+let lastTimetableKey = '';
+function tick() {
+  const now = new Date();
+  const h24 = CONFIG.clock24;
+  $('time').textContent = `${h24 ? pad(now.getHours()) : (now.getHours() % 12 || 12)}:${pad(now.getMinutes())}`;
+  $('suffix').textContent = h24 ? '' : (now.getHours() < 12 ? 'AM' : 'PM');
+  $('date').textContent = now.toLocaleDateString('en-GB', { weekday: 'long', day: 'numeric', month: 'long' });
+
+  const sd = schoolDay(now);
+
+  // Leave countdown, aimed at the next school day's leave time
+  const leave = new Date(sd.day); leave.setHours(+CONFIG.leaveTime.slice(0, 2), +CONFIG.leaveTime.slice(3, 5), 0, 0);
+  if (leave < now) leave.setDate(leave.getDate() + 1);
+  const diff = Math.ceil((leave - now) / 60000);
+  let num, unit;
+  if (diff < 60) { num = diff; unit = 'min'; }
+  else if (diff < 1440) { num = Math.floor(diff / 60); unit = `h ${diff % 60}m`; }
+  else { num = Math.floor(diff / 1440); unit = `d ${Math.floor((diff % 1440) / 60)}h`; }
+  const tint = diff <= 5 ? '#ff5f4a' : diff <= 15 ? '#ffa44d' : '#f4f4f2';
+  $('leave-num').textContent = num;
+  $('leave-num').style.color = diff <= 5 ? '#ff5f4a' : '#f6f6f4';
+  $('leave-unit').textContent = unit;
+  $('leave-dot').style.background = tint;
+  $('ring').setAttribute('stroke', tint);
+  $('ring').setAttribute('stroke-dashoffset', 502.65 * (1 - Math.min(1, diff / 60)));
+  const lh = +CONFIG.leaveTime.slice(0, 2), lm = CONFIG.leaveTime.slice(3, 5);
+  const leaveLabel = h24 ? CONFIG.leaveTime : `${lh % 12 || 12}:${lm}`;
+  $('ring-time').textContent = leaveLabel;
+  $('ring-ampm').textContent = h24 ? '' : (lh < 12 ? 'AM' : 'PM');
+  $('leave-at').textContent = sd.isToday || sd.day - new Date(now).setHours(0, 0, 0, 0) <= 86400000
+    ? `Leave at ${leaveLabel}${h24 ? '' : (lh < 12 ? 'am' : 'pm')}`
+    : `Next: ${sd.day.toLocaleDateString('en-GB', { weekday: 'long' })}`;
+
+  // Timetable (only re-render when the minute changes)
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  const key = sd.day.toDateString() + nowMin;
+  if (key === lastTimetableKey) return;
+  lastTimetableKey = key;
+
+  const dayName = sd.day.toLocaleDateString('en-GB', { weekday: 'long' });
+  $('tt-day').textContent = `${sd.isToday ? dayName : (sd.day - new Date(now).setHours(0,0,0,0) === 86400000 ? 'Tomorrow' : dayName)} · Week ${weekLetter(sd.day)}`;
+
+  const L = sd.lessons;
+  let cur = -1, next = 0;
+  if (sd.isToday) {
+    cur = L.findIndex(l => nowMin >= toMin(l[0]) && nowMin < toMin(l[1]));
+    next = cur === -1 ? L.findIndex(l => nowMin < toMin(l[0])) : -1;
+  }
+  if (!L.length) {
+    $('lessons').innerHTML = `<div class="no-school">Week ${weekLetter(sd.day)} timetable not added yet</div>`;
+    return;
+  }
+  $('lessons').innerHTML = L.map((l, i) => {
+    const on = i === cur, nx = i === next, hi = on || nx;
+    const past = sd.isToday && (cur !== -1 ? i < cur : next > 0 && i < next);
+    return `<div class="lesson" style="background:${hi ? 'rgba(255,255,255,0.09)' : 'transparent'};opacity:${past ? 0.35 : 1}">
+      <div class="start">${esc(l[0])}</div>
+      <div class="subject" style="font-weight:${hi ? 600 : 400}">${esc(l[2])}</div>
+      <div class="tag" style="color:${hi ? '#f4f4f2' : 'rgba(255,255,255,0.35)'}">${on ? 'Now' : nx ? 'Next' : esc(l[3])}</div>
+    </div>`;
+  }).join('');
+}
+tick();
+setInterval(tick, 1000);
+
+// ---------- News (placeholder) ----------
+$('news').innerHTML = CONFIG.news.slice(0, 3).map(n => `<div class="story">
+  <div class="meta"><span>${esc(n.source)}</span><span style="font-weight:500">${esc(n.time)}</span></div>
+  <div class="title">${esc(n.title)}</div>
+</div>`).join('');
+
+// ---------- Weather (Open-Meteo, no key) ----------
+$('place').textContent = CONFIG.place;
+const WMO = {
+  0: 'Clear', 1: 'Mostly clear', 2: 'Partly cloudy', 3: 'Overcast', 45: 'Fog', 48: 'Freezing fog',
+  51: 'Light drizzle', 53: 'Drizzle', 55: 'Heavy drizzle', 56: 'Freezing drizzle', 57: 'Freezing drizzle',
+  61: 'Light rain', 63: 'Rain', 65: 'Heavy rain', 66: 'Freezing rain', 67: 'Freezing rain',
+  71: 'Light snow', 73: 'Snow', 75: 'Heavy snow', 77: 'Snow grains',
+  80: 'Light showers', 81: 'Showers', 82: 'Heavy showers', 85: 'Snow showers', 86: 'Snow showers',
+  95: 'Thunderstorms', 96: 'Thunderstorms', 99: 'Thunderstorms'
+};
+async function loadWeather() {
+  try {
+    const url = `https://api.open-meteo.com/v1/forecast?latitude=${CONFIG.lat}&longitude=${CONFIG.lon}` +
+      `&current=temperature_2m,weather_code&hourly=temperature_2m,precipitation_probability` +
+      `&daily=temperature_2m_max,temperature_2m_min&timezone=Europe%2FLondon&forecast_days=2`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(res.status);
+    const w = await res.json();
+    $('w-temp').textContent = `${Math.round(w.current.temperature_2m)}°`;
+    $('w-desc').textContent = WMO[w.current.weather_code] || '';
+    $('w-hilo').textContent = `H ${Math.round(w.daily.temperature_2m_max[0])}°  L ${Math.round(w.daily.temperature_2m_min[0])}°`;
+
+    // Next four 3-hourly slots from the coming hour
+    const now = new Date();
+    const startIdx = w.hourly.time.findIndex(t => new Date(t) > now);
+    const slots = [0, 3, 6, 9].map(o => startIdx + o).filter(i => i >= 0 && i < w.hourly.time.length);
+    $('hourly').innerHTML = slots.map(i => {
+      const hr = new Date(w.hourly.time[i]).getHours();
+      const label = CONFIG.clock24 ? pad(hr) + ':00' : `${hr % 12 || 12}${hr < 12 ? 'AM' : 'PM'}`;
+      return `<div class="hour">
+        <div style="font-size:22px;font-weight:500;color:rgba(255,255,255,0.4)">${label}</div>
+        <div style="font-size:34px;font-weight:500">${Math.round(w.hourly.temperature_2m[i])}°</div>
+        <div style="font-size:21px;font-weight:500;color:rgba(255,255,255,0.4)">${w.hourly.precipitation_probability[i] ?? 0}%</div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    // Keep the last good reading if there is one
+    if ($('w-temp').textContent === '–') $('w-desc').textContent = 'Weather unavailable';
+  }
+}
+loadWeather();
+setInterval(loadWeather, 20 * 60 * 1000);
+
+// Reload once a day at 3am so the page never goes stale
+setInterval(() => { const n = new Date(); if (n.getHours() === 3 && n.getMinutes() === 0) location.reload(); }, 60000);
+</script>
+</body>
+</html>
