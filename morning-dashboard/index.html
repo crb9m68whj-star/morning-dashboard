@@ -41,7 +41,10 @@ const CONFIG = {
     ]
   },
 
-  // Placeholder headlines (swap for a real feed later)
+  // News: any RSS feed, fetched through rss2json (free, no key)
+  newsFeed: 'https://feeds.bbci.co.uk/news/rss.xml',
+  newsSource: 'BBC News',
+  // Shown only if the feed can't be reached
   news: [
     { source: 'Lincolnshire Echo', time: '6:40', title: 'Trent riverside path reopens after two-year restoration' },
     { source: 'Regional News', time: '7:15', title: 'Extra morning trains to Lincoln confirmed from January' },
@@ -98,7 +101,8 @@ const CONFIG = {
   .story { display: flex; flex-direction: column; gap: 4px; padding: 13px 0; }
   .story + .story { border-top: 1px solid rgba(255,255,255,0.08); }
   .story .meta { display: flex; justify-content: space-between; font-size: 21px; font-weight: 600; color: rgba(255,255,255,0.4); }
-  .story .title { font-size: 27px; font-weight: 500; line-height: 1.2; letter-spacing: -0.005em; }
+  .story .title { font-size: 27px; font-weight: 500; line-height: 1.2; letter-spacing: -0.005em;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 </style>
 </head>
 <body>
@@ -308,11 +312,36 @@ function tick() {
 tick();
 setInterval(tick, 1000);
 
-// ---------- News (placeholder) ----------
-$('news').innerHTML = CONFIG.news.slice(0, 3).map(n => `<div class="story">
+// ---------- News (RSS via rss2json) ----------
+function renderNews(items) {
+  $('news').innerHTML = items.slice(0, 3).map(n => `<div class="story">
   <div class="meta"><span>${esc(n.source)}</span><span style="font-weight:500">${esc(n.time)}</span></div>
   <div class="title">${esc(n.title)}</div>
 </div>`).join('');
+}
+let newsLoaded = false;
+async function loadNews() {
+  try {
+    const res = await fetch('https://api.rss2json.com/v1/api.json?rss_url=' + encodeURIComponent(CONFIG.newsFeed));
+    if (!res.ok) throw new Error(res.status);
+    const data = await res.json();
+    if (data.status !== 'ok' || !data.items.length) throw new Error('bad feed');
+    renderNews(data.items.map(i => {
+      // pubDate is UTC, e.g. "2026-11-08 21:10:23"
+      const d = new Date(i.pubDate.replace(' ', 'T') + 'Z');
+      const time = isNaN(d) ? '' : CONFIG.clock24
+        ? `${pad(d.getHours())}:${pad(d.getMinutes())}`
+        : `${d.getHours() % 12 || 12}:${pad(d.getMinutes())}`;
+      return { source: CONFIG.newsSource, time, title: i.title };
+    }));
+    newsLoaded = true;
+  } catch (e) {
+    // Keep the last good headlines; fall back to placeholders on first failure
+    if (!newsLoaded) renderNews(CONFIG.news);
+  }
+}
+loadNews();
+setInterval(loadNews, 30 * 60 * 1000);
 
 // ---------- Weather (Open-Meteo, no key) ----------
 $('place').textContent = CONFIG.place;
