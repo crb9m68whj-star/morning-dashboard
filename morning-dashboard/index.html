@@ -45,9 +45,9 @@ const CONFIG = {
   downstairsTime: '07:00',
   morningStart: '05:00',
 
-  // Spotify "Now Playing". Paste the Client ID from developer.spotify.com,
-  // then open the dashboard once with ?spotify on the end to log in.
-  spotifyClientId: '',
+  // "Now Playing" from Last.fm (Spotify scrobbles to it)
+  lastfmUser: 'ashtonm101',
+  lastfmKey: 'efdb699c82ba204f71f492af1f824a0e',
 
   // Background animation. Lower fps = easier on a Fire TV Stick.
   motion: 1,
@@ -352,102 +352,71 @@ function tick() {
 tick();
 setInterval(tick, 1000);
 
-// ---------- Spotify Now Playing (PKCE login, no server) ----------
-const SP_REDIRECT = location.origin + location.pathname;
-const store = {
-  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
-  set(k, v) { try { v == null ? localStorage.removeItem(k) : localStorage.setItem(k, v); } catch (e) {} }
-};
-const b64url = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+// ---------- Now Playing (Last.fm, which Spotify scrobbles to) ----------
+const LFM = 'https://ws.audioscrobbler.com/2.0/?format=json&api_key=' + CONFIG.lastfmKey;
+const NO_ART = '2a96cbd8b46e442fc41c2b86b821562f'; // Last.fm's grey star placeholder
+const durations = {};
 
-async function spLogin() {
-  const verifier = b64url(crypto.getRandomValues(new Uint8Array(48)));
-  store.set('sp_verifier', verifier);
-  const challenge = b64url(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier)));
-  location.href = 'https://accounts.spotify.com/authorize?' + new URLSearchParams({
-    client_id: CONFIG.spotifyClientId, response_type: 'code', redirect_uri: SP_REDIRECT,
-    scope: 'user-read-playback-state user-read-currently-playing',
-    code_challenge_method: 'S256', code_challenge: challenge
-  });
-}
-async function spToken(params) {
-  const res = await fetch('https://accounts.spotify.com/api/token', {
-    method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body: new URLSearchParams({ client_id: CONFIG.spotifyClientId, ...params })
-  });
-  const t = await res.json();
-  if (!res.ok) throw new Error(t.error || res.status);
-  store.set('sp_access', t.access_token);
-  store.set('sp_expires', Date.now() + (t.expires_in - 60) * 1000);
-  if (t.refresh_token) store.set('sp_refresh', t.refresh_token);
-}
-async function spAccess() {
-  if (store.get('sp_access') && Date.now() < +store.get('sp_expires')) return store.get('sp_access');
-  const refresh = store.get('sp_refresh');
-  if (!refresh) return null;
-  await spToken({ grant_type: 'refresh_token', refresh_token: refresh });
-  return store.get('sp_access');
-}
-
-let np = null; // { title, artist, device, img, progress, duration, playing, at }
+let np = null; // { key, title, artist, sub, img, duration, started, playing }
 function renderNP(msg) {
   const on = np && np.playing;
   $('eq').classList.toggle('paused', !on);
   $('np-title').textContent = np ? np.title : msg;
   $('np-artist').textContent = np ? np.artist : 'Spotify';
-  $('np-device').textContent = np ? np.device : '';
+  $('np-device').textContent = np ? np.sub : '';
   if (np && np.img) { if ($('art-img').src !== np.img) $('art-img').src = np.img; $('art').classList.add('has-img'); }
   else $('art').classList.remove('has-img');
   updateBar();
 }
+// Last.fm doesn't report playback position, so estimate it from when the track started
 function updateBar() {
   const fmt = ms => { const s = Math.max(0, Math.floor(ms / 1000)); return `${Math.floor(s / 60)}:${pad(s % 60)}`; };
-  if (!np || !np.duration) { $('np-bar').style.width = '0'; $('np-elapsed').textContent = '0:00'; $('np-remaining').textContent = '-0:00'; return; }
-  const p = Math.min(np.duration, np.progress + (np.playing ? Date.now() - np.at : 0));
+  if (!np || !np.playing || !np.duration) {
+    $('np-bar').style.width = '0'; $('np-elapsed').textContent = np && np.playing ? 'Live' : '';
+    $('np-remaining').textContent = ''; return;
+  }
+  const p = Math.min(np.duration, Date.now() - np.started);
   $('np-bar').style.width = (p / np.duration * 100) + '%';
   $('np-elapsed').textContent = fmt(p);
   $('np-remaining').textContent = '-' + fmt(np.duration - p);
 }
-async function loadSpotify() {
-  if (!CONFIG.spotifyClientId) return renderNP('Not connected');
+async function trackDuration(artist, track) {
+  const key = artist + '\n' + track;
+  if (!(key in durations)) {
+    durations[key] = 0;
+    try {
+      const r = await fetch(`${LFM}&method=track.getInfo&artist=${encodeURIComponent(artist)}&track=${encodeURIComponent(track)}`);
+      durations[key] = +((await r.json()).track || {}).duration || 0;
+    } catch (e) {}
+  }
+  return durations[key];
+}
+async function loadNowPlaying() {
+  if (!CONFIG.lastfmUser) return renderNP('Not connected');
   try {
-    const token = await spAccess();
-    if (!token) return renderNP('Not connected');
-    const res = await fetch('https://api.spotify.com/v1/me/player?additional_types=episode', { headers: { Authorization: 'Bearer ' + token } });
-    if (res.status === 401) { store.set('sp_expires', 0); return; }
-    if (res.status === 204) { np = null; return renderNP('Nothing playing'); }
-    if (!res.ok) throw new Error(res.status);
-    const p = await res.json();
-    const it = p.item;
-    if (!it) { np = null; return renderNP('Nothing playing'); }
-    const imgs = (it.album || it.show || {}).images || [];
+    const r = await fetch(`${LFM}&method=user.getrecenttracks&limit=1&user=${encodeURIComponent(CONFIG.lastfmUser)}`);
+    if (!r.ok) throw new Error(r.status);
+    const t = [].concat((await r.json()).recenttracks.track || [])[0];
+    if (!t) { np = null; return renderNP('Nothing playing'); }
+    const playing = !!(t['@attr'] && t['@attr'].nowplaying);
+    const artist = t.artist['#text'], key = artist + '\n' + t.name;
+    const img = ((t.image || []).find(i => i.size === 'extralarge') || {})['#text'] || '';
+    const fresh = !np || np.key !== key || !np.playing;
     np = {
-      title: it.name,
-      artist: it.artists ? it.artists.map(a => a.name).join(', ') : (it.show ? it.show.name : ''),
-      device: p.device ? p.device.name : '',
-      img: (imgs[1] || imgs[0] || {}).url || '',
-      progress: p.progress_ms || 0, duration: it.duration_ms || 0, playing: p.is_playing, at: Date.now()
+      key, title: t.name, artist, playing,
+      sub: playing ? (t.album['#text'] || '') : 'Last played',
+      img: img.includes(NO_ART) ? '' : img,
+      started: fresh ? Date.now() : np.started,
+      duration: playing ? await trackDuration(artist, t.name) : 0
     };
     renderNP();
   } catch (e) {
     // Leave whatever is showing; try again next poll
   }
 }
-
-(async () => {
-  const q = new URLSearchParams(location.search);
-  if (q.has('spotify') && CONFIG.spotifyClientId) return spLogin();
-  if (q.has('code') && store.get('sp_verifier')) {
-    try {
-      await spToken({ grant_type: 'authorization_code', code: q.get('code'), redirect_uri: SP_REDIRECT, code_verifier: store.get('sp_verifier') });
-    } catch (e) {}
-    store.set('sp_verifier', null);
-    history.replaceState(null, '', SP_REDIRECT);
-  }
-  loadSpotify();
-  setInterval(loadSpotify, 5000);
-  setInterval(updateBar, 1000);
-})();
+loadNowPlaying();
+setInterval(loadNowPlaying, 15000);
+setInterval(updateBar, 1000);
 
 // ---------- Weather (Open-Meteo, no key) ----------
 $('place').textContent = CONFIG.place;
